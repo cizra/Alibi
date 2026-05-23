@@ -11,10 +11,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.layout.onPlaced
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.delay
 
 @Composable
@@ -57,7 +57,7 @@ fun rememberForceUpdateOnLifeCycleChange(
 ): Modifier {
     var tickTack by rememberSaveable { mutableStateOf(1f) }
 
-    OnLifecycleEvent { owner, event ->
+    OnLifecycleEvent { _, event ->
         if (events.contains(event)) {
             tickTack = if (tickTack == 1f) 0.99f else 1f
         }

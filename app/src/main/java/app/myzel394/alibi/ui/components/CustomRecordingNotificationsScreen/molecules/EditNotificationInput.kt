@@ -44,10 +44,8 @@ fun EditNotificationInput(
     title: String,
     description: String,
     icon: Painter,
-    onShowOngoingChange: (Boolean) -> Unit,
     onTitleChange: (String) -> Unit,
     onDescriptionChange: (String) -> Unit,
-    onIconChange: (Int) -> Unit,
 ) {
     var ongoingStartTime by remember { mutableStateOf(LocalDateTime.now()) }
 

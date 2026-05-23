@@ -9,8 +9,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import app.myzel394.alibi.ui.utils.getCameraProvider
 import kotlinx.coroutines.launch
 

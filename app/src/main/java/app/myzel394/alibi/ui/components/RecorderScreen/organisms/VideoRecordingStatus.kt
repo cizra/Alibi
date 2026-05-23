@@ -250,7 +250,7 @@ fun _PrimitiveControls(videoRecorder: VideoRecorderModel) {
 
                 Log.i("Alibi", "====== Updating data store...")
                 dataStore.updateData {
-                    it.saveLastRecording(videoRecorder as RecorderModel)
+                    it.saveLastRecording(videoRecorder.asRecorderModel())
                 }
                 Log.i("Alibi", "====== Updating data store... done")
 

@@ -25,6 +25,8 @@ android {
     splits {
         abi {
             enable true
+            reset()
+            include 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
 
             universalApk true
         }
@@ -88,13 +90,21 @@ android {
         resources {
             excludes += '/META-INF/{AL2.0,LGPL2.1}'
         }
+        jniLibs {
+            keepDebugSymbols += ['**/*.so']
+        }
     }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.compilerArgs += ['-Xlint:-options']
 }
 
 dependencies {
     implementation 'androidx.core:core-ktx:1.13.1'
     implementation platform('org.jetbrains.kotlin:kotlin-bom:1.8.0')
     implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.8.4'
+    implementation 'androidx.lifecycle:lifecycle-runtime-compose:2.8.4'
     implementation 'androidx.activity:activity-compose:1.9.1'
     implementation 'androidx.activity:activity-ktx:1.9.1'
     implementation platform('androidx.compose:compose-bom:2024.09.00')

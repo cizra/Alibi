@@ -250,10 +250,10 @@ abstract class BatchesFolder(
         onProgress: (Float?) -> Unit = {},
         fileName: String,
     ): String {
-        val disableCache = disableCache ?: (type != BatchType.INTERNAL)
+        val shouldDisableCache = disableCache ?: (type != BatchType.INTERNAL)
         val date = recording.getStartDateForFilename(filenameFormat)
 
-        if (!disableCache && checkIfOutputAlreadyExists(fileName)
+        if (!shouldDisableCache && checkIfOutputAlreadyExists(fileName)
         ) {
             return getOutputFileForFFmpeg(
                 date = recording.recordingStart,
@@ -573,11 +573,13 @@ abstract class BatchesFolder(
     }
 
     companion object {
+        @Suppress("UNUSED_PARAMETER")
         fun requiredBytesForOneMinuteOfRecording(appSettings: AppSettings): Long {
             // 350 MiB sounds like a good default
             return 350 * 1024 * 1024
         }
 
+        @Suppress("UNUSED_PARAMETER")
         fun canAccessFolder(context: Context, uri: Uri): Boolean {
             // This always returns false for some reason, let's just assume it's true
             return true
@@ -599,4 +601,3 @@ abstract class BatchesFolder(
         }
     }
 }
-

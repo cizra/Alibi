@@ -124,14 +124,8 @@ fun NotificationEditor(
                 title = notificationModel.title,
                 description = notificationModel.description,
                 icon = painterResource(notificationModel.icon),
-                onShowOngoingChange = {
-                    notificationModel.showOngoing = it
-                },
                 onTitleChange = notificationModel::setTitle,
                 onDescriptionChange = notificationModel::setDescription,
-                onIconChange = {
-                    notificationModel.icon = it
-                },
             )
 
             Row(
