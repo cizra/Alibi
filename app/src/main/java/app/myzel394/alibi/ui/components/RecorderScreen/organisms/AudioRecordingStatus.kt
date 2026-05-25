@@ -172,7 +172,7 @@ fun _PrimitiveControls(audioRecorder: AudioRecorderModel) {
                 audioRecorder.stopRecording(context)
 
                 dataStore.updateData {
-                    it.saveLastRecording(audioRecorder as RecorderModel)
+                    it.saveLastRecording(audioRecorder.asRecorderModel())
                 }
 
                 audioRecorder.onRecordingSave(false).join()

@@ -55,6 +55,7 @@ import app.myzel394.alibi.ui.models.VideoRecorderModel
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 
+@Suppress("DEPRECATION")
 @Composable
 fun StartRecording(
     audioRecorder: AudioRecorderModel,

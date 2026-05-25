@@ -41,6 +41,7 @@ data class CameraInfo(
             }.filterNotNull()
         }
 
+        @Suppress("UNUSED_PARAMETER")
         fun fromCameraId(cameraId: String, lensFacing: Int): CameraInfo {
             return CameraInfo(
                 id = cameraId.toInt(),

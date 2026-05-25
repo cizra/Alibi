@@ -5,6 +5,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.GpsFixed
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -34,11 +35,20 @@ fun VideoRecordingStart(
     var showSheet by rememberSaveable {
         mutableStateOf(false)
     }
+    var startAfterStoragePermission by rememberSaveable {
+        mutableStateOf(false)
+    }
+
+    fun startRecordingWithDefaults() {
+        videoRecorder.init(context)
+        videoRecorder.startRecording(context, appSettings)
+    }
 
     if (showSheet) {
         VideoRecorderPreparationSheet(
             showPreview = showPreview,
             videoSettings = videoRecorder,
+            appSettings = appSettings,
             onDismiss = {
                 showSheet = false
             },
@@ -51,44 +61,78 @@ fun VideoRecordingStart(
     }
 
     PermissionRequester(
-        permission = Manifest.permission.WRITE_EXTERNAL_STORAGE,
-        icon = Icons.AutoMirrored.Filled.InsertDriveFile,
+        permission = Manifest.permission.CAMERA,
+        icon = Icons.Default.CameraAlt,
         onPermissionAvailable = {
-            showSheet = true
+            startRecordingWithDefaults()
+        },
+    ) { triggerCamera ->
+        fun startAfterRequiredPermissions() {
+            if (!PermissionHelper.hasGranted(context, Manifest.permission.CAMERA)) {
+                triggerCamera()
+                return
+            }
+
+            startRecordingWithDefaults()
         }
-    ) { triggerExternalStorage ->
-        BigButton(
-            label = stringResource(R.string.ui_videoRecorder_action_start_label),
-            description = stringResource(R.string.ui_videoRecorder_action_configure_label),
-            icon = Icons.Default.CameraAlt,
-            onLongClick = {
-                if (appSettings.requiresExternalStoragePermission(context)) {
-                    triggerExternalStorage()
-                    return@BigButton
-                }
 
-                showSheet = true
+        PermissionRequester(
+            permission = Manifest.permission.ACCESS_FINE_LOCATION,
+            icon = Icons.Default.GpsFixed,
+            onPermissionAvailable = {
+                startAfterRequiredPermissions()
             },
-            onClick = {
-                if (appSettings.requiresExternalStoragePermission(context)) {
-                    triggerExternalStorage()
-                    return@BigButton
-                }
-
-                if (PermissionHelper.hasGranted(
+        ) { triggerLocation ->
+            fun startAfterOptionalLocation() {
+                if (
+                    appSettings.videoRecorderSettings.overlaySettings.locationEnabled &&
+                    !PermissionHelper.hasGranted(
                         context,
-                        Manifest.permission.CAMERA
-                    ) && PermissionHelper.hasGranted(
-                        context,
-                        Manifest.permission.RECORD_AUDIO
+                        Manifest.permission.ACCESS_FINE_LOCATION,
                     )
                 ) {
-                    videoRecorder.startRecording(context, appSettings)
+                    triggerLocation()
                 } else {
-                    showSheet = true
+                    startAfterRequiredPermissions()
                 }
-            },
-            isBig = useLargeButtons,
-        )
+            }
+
+            PermissionRequester(
+                permission = Manifest.permission.WRITE_EXTERNAL_STORAGE,
+                icon = Icons.AutoMirrored.Filled.InsertDriveFile,
+                onPermissionAvailable = {
+                    if (startAfterStoragePermission) {
+                        startAfterStoragePermission = false
+                        startAfterOptionalLocation()
+                    } else {
+                        showSheet = true
+                    }
+                }
+            ) { triggerExternalStorage ->
+                BigButton(
+                    label = stringResource(R.string.ui_videoRecorder_action_start_label),
+                    description = stringResource(R.string.ui_videoRecorder_action_configure_label),
+                    icon = Icons.Default.CameraAlt,
+                    onLongClick = {
+                        if (appSettings.requiresExternalStoragePermission(context)) {
+                            startAfterStoragePermission = false
+                            triggerExternalStorage()
+                            return@BigButton
+                        }
+
+                        showSheet = true
+                    },
+                    onClick = {
+                        if (appSettings.requiresExternalStoragePermission(context)) {
+                            startAfterStoragePermission = true
+                            triggerExternalStorage()
+                        } else {
+                            startAfterOptionalLocation()
+                        }
+                    },
+                    isBig = useLargeButtons,
+                )
+            }
+        }
     }
 }

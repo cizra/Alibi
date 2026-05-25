@@ -21,7 +21,6 @@ import app.myzel394.alibi.db.RecordingInformation
 import app.myzel394.alibi.helpers.AudioBatchesFolder
 import app.myzel394.alibi.helpers.BatchesFolder
 import app.myzel394.alibi.helpers.VideoBatchesFolder
-import app.myzel394.alibi.services.IntervalRecorderService
 import app.myzel394.alibi.ui.components.RecorderScreen.atoms.BatchesInaccessibleDialog
 import app.myzel394.alibi.ui.components.RecorderScreen.atoms.RecorderErrorDialog
 import app.myzel394.alibi.ui.components.RecorderScreen.atoms.RecorderProcessingDialog
@@ -30,6 +29,7 @@ import app.myzel394.alibi.ui.models.AudioRecorderModel
 import app.myzel394.alibi.ui.models.BaseRecorderModel
 import app.myzel394.alibi.ui.models.VideoRecorderModel
 import app.myzel394.alibi.ui.utils.rememberFileSaverDialog
+import app.myzel394.alibi.services.IntervalRecorderService
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -42,6 +42,12 @@ typealias RecorderModel = BaseRecorderModel<
         BatchesFolder,
         IntervalRecorderService<RecordingInformation, BatchesFolder>,
         >
+
+@Suppress("UNCHECKED_CAST")
+fun AudioRecorderModel.asRecorderModel(): RecorderModel = this as RecorderModel
+
+@Suppress("UNCHECKED_CAST")
+fun VideoRecorderModel.asRecorderModel(): RecorderModel = this as RecorderModel
 
 @Composable
 fun RecorderEventsHandler(
@@ -225,8 +231,23 @@ fun RecorderEventsHandler(
                             }
                         }
                     }
+                } catch (error: Error) {
+                    if (
+                        error.cause is UnsatisfiedLinkError ||
+                        error.message?.contains("FFmpegKit failed to start") == true
+                    ) {
+                        Log.e("RecorderEventsHandler", "FFmpegKit failed to save recording", error)
+                        scope.launch {
+                            showRecorderError = true
+                        }
+                    } else {
+                        throw error
+                    }
                 } catch (error: Exception) {
-                    Log.getStackTraceString(error)
+                    Log.e("RecorderEventsHandler", "Failed to save recording", error)
+                    scope.launch {
+                        showRecorderError = true
+                    }
                 } finally {
                     if (recorder.isCurrentlyActivelyRecording) {
                         recorder.recorderService?.unlockFiles(cleanupOldFiles)
@@ -254,14 +275,14 @@ fun RecorderEventsHandler(
         } else {
             previousAudioSettings = settings
             audioRecorder.onRecordingSave = { cleanupOldFiles ->
-                saveRecording(audioRecorder as RecorderModel, cleanupOldFiles)
+                saveRecording(audioRecorder.asRecorderModel(), cleanupOldFiles)
             }
             audioRecorder.onRecordingStart = {
                 snackbarHostState.currentSnackbarData?.dismiss()
             }
             audioRecorder.onError = {
                 scope.launch {
-                    saveAsLastRecording(audioRecorder as RecorderModel)
+                    saveAsLastRecording(audioRecorder.asRecorderModel())
 
                     runCatching {
                         audioRecorder.stopRecording(context)
@@ -304,14 +325,14 @@ fun RecorderEventsHandler(
             previousVideoSettings = settings
             Log.i("Alibi", "===== Registering videoRecorder events $videoRecorder")
             videoRecorder.onRecordingSave = { cleanupOldFiles ->
-                saveRecording(videoRecorder as RecorderModel, cleanupOldFiles)
+                saveRecording(videoRecorder.asRecorderModel(), cleanupOldFiles)
             }
             videoRecorder.onRecordingStart = {
                 snackbarHostState.currentSnackbarData?.dismiss()
             }
             videoRecorder.onError = {
                 scope.launch {
-                    saveAsLastRecording(videoRecorder as RecorderModel)
+                    saveAsLastRecording(videoRecorder.asRecorderModel())
 
                     runCatching {
                         videoRecorder.stopRecording(context)

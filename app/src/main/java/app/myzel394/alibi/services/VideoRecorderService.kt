@@ -1,6 +1,7 @@
 package app.myzel394.alibi.services
 
 import android.annotation.SuppressLint
+import android.Manifest
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
@@ -8,6 +9,7 @@ import android.util.Range
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.TorchState
+import androidx.camera.core.UseCaseGroup
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.video.FileDescriptorOutputOptions
 import androidx.camera.video.FileOutputOptions
@@ -20,6 +22,7 @@ import androidx.camera.video.VideoCapture
 import androidx.camera.video.VideoRecordEvent
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
+import androidx.core.util.Consumer
 import app.myzel394.alibi.NotificationHelper
 import app.myzel394.alibi.db.RecordingInformation
 import app.myzel394.alibi.enums.RecorderState
@@ -27,6 +30,10 @@ import app.myzel394.alibi.helpers.BatchesFolder
 import app.myzel394.alibi.helpers.VideoBatchesFolder
 import app.myzel394.alibi.ui.SUPPORTS_SAVING_VIDEOS_IN_CUSTOM_FOLDERS
 import app.myzel394.alibi.ui.SUPPORTS_SCOPED_STORAGE
+import app.myzel394.alibi.ui.utils.PermissionHelper
+import app.myzel394.alibi.videooverlay.OverlayLocationProvider
+import app.myzel394.alibi.videooverlay.OverlayTextFormatter
+import app.myzel394.alibi.videooverlay.VideoOverlayEffect
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -47,6 +54,8 @@ class VideoRecorderService :
     private var cameraProvider: ProcessCameraProvider? = null
     private var videoCapture: VideoCapture<Recorder>? = null
     private var activeRecording: Recording? = null
+    private var videoOverlayEffect: VideoOverlayEffect? = null
+    private var overlayLocationProvider: OverlayLocationProvider? = null
 
     // Used to listen and check if the camera is available
     private var _cameraAvailableListener = CompletableDeferred<Unit>()
@@ -103,6 +112,13 @@ class VideoRecorderService :
         super.pause()
 
         stopActiveRecording()
+        stopOverlayLocationProvider()
+    }
+
+    override fun resume() {
+        super.resume()
+
+        startOverlayLocationProvider()
     }
 
     override fun startForegroundService() {
@@ -111,14 +127,29 @@ class VideoRecorderService :
             NotificationHelper.RECORDER_CHANNEL_NOTIFICATION_ID,
             getNotificationHelper().buildStartingNotification(),
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                if (enableAudio)
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-                else
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
+                buildForegroundServiceType()
             } else {
                 0
             },
         )
+    }
+
+    private fun buildForegroundServiceType(): Int {
+        var type = ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
+
+        if (enableAudio) {
+            type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+        }
+
+        if (
+            hasInitializedSettings() &&
+            settings.videoRecorderSettings.overlaySettings.locationEnabled &&
+            PermissionHelper.hasGranted(this, Manifest.permission.ACCESS_FINE_LOCATION)
+        ) {
+            type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+        }
+
+        return type
     }
 
     @SuppressLint("MissingPermission")
@@ -127,13 +158,20 @@ class VideoRecorderService :
 
         fun action() {
             stopActiveRecording()
+            val recordingCounter = counter
             val newRecording = prepareVideoRecording()
 
             _videoFinalizerListener = CompletableDeferred()
 
             activeRecording = newRecording.start(ContextCompat.getMainExecutor(this)) { event ->
-                if (event is VideoRecordEvent.Finalize && (this@VideoRecorderService.state == RecorderState.STOPPED || this@VideoRecorderService.state == RecorderState.PAUSED)) {
-                    _videoFinalizerListener.complete(Unit)
+                if (event is VideoRecordEvent.Finalize) {
+                    if (event.error in DELETE_RECORDING_ERROR_CODES) {
+                        batchesFolder.deleteRecordings(recordingCounter..recordingCounter)
+                    }
+
+                    if (this@VideoRecorderService.state == RecorderState.STOPPED || this@VideoRecorderService.state == RecorderState.PAUSED) {
+                        _videoFinalizerListener.complete(Unit)
+                    }
                 }
             }
         }
@@ -189,14 +227,23 @@ class VideoRecorderService :
 
         val recorder = buildRecorder()
         videoCapture = buildVideoCapture(recorder)
+        val useCaseGroup = buildUseCaseGroupWithOverlay(videoCapture!!)
 
         runOnMain {
             try {
-                camera = cameraProvider!!.bindToLifecycle(
-                    this,
-                    selectedCamera,
-                    videoCapture
-                )
+                camera = if (useCaseGroup != null) {
+                    cameraProvider!!.bindToLifecycle(
+                        this,
+                        selectedCamera,
+                        useCaseGroup,
+                    )
+                } else {
+                    cameraProvider!!.bindToLifecycle(
+                        this,
+                        selectedCamera,
+                        videoCapture,
+                    )
+                }
 
                 cameraControl = CameraControl(camera!!).also {
                     it.init()
@@ -205,6 +252,7 @@ class VideoRecorderService :
 
                 _cameraAvailableListener.complete(Unit)
             } catch (error: IllegalArgumentException) {
+                releaseOverlay()
                 onError()
             }
         }
@@ -218,6 +266,7 @@ class VideoRecorderService :
             runCatching {
                 cameraProvider?.unbindAll()
             }
+            releaseOverlay()
             _cameraCloserListener.complete(Unit)
 
             // Doesn't need to run on main thread, but
@@ -235,6 +284,62 @@ class VideoRecorderService :
         runCatching {
             activeRecording?.stop()
         }
+    }
+
+    private fun buildUseCaseGroupWithOverlay(
+        videoCapture: VideoCapture<Recorder>,
+    ): UseCaseGroup? {
+        val overlaySettings = settings.videoRecorderSettings.overlaySettings
+        if (!overlaySettings.enabled) {
+            return null
+        }
+
+        val formatter = OverlayTextFormatter()
+        val locationProvider = if (overlaySettings.locationEnabled) {
+            OverlayLocationProvider(this).also {
+                overlayLocationProvider = it
+                it.start()
+            }
+        } else {
+            null
+        }
+
+        videoOverlayEffect = VideoOverlayEffect(
+            overlayTextProvider = {
+                formatter.buildOverlayText(
+                    overlaySettings,
+                    locationProvider?.getLatestLocation(),
+                )
+            },
+            errorListener = Consumer { error ->
+                error.printStackTrace()
+                runOnMain {
+                    releaseOverlay()
+                    onError()
+                }
+            },
+        )
+
+        return UseCaseGroup.Builder()
+            .addUseCase(videoCapture)
+            .addEffect(videoOverlayEffect!!)
+            .build()
+    }
+
+    private fun startOverlayLocationProvider() {
+        overlayLocationProvider?.start()
+    }
+
+    private fun stopOverlayLocationProvider() {
+        overlayLocationProvider?.stop()
+    }
+
+    private fun releaseOverlay() {
+        stopOverlayLocationProvider()
+        overlayLocationProvider = null
+
+        videoOverlayEffect?.release()
+        videoOverlayEffect = null
     }
 
     private fun getNameForMediaFile() =
@@ -309,7 +414,7 @@ class VideoRecorderService :
             folderPath = batchesFolder.exportFolderForSettings(),
             recordingStart = recordingStart,
             maxDuration = settings.maxDuration,
-            batchesAmount = batchesFolder.getBatchesForFFmpeg().size,
+            batchesAmount = batchesFolder.getBatchesAmount(),
             fileExtension = settings.videoRecorderSettings.fileExtension,
             intervalDuration = settings.intervalDuration,
             type = RecordingInformation.Type.VIDEO,
@@ -317,6 +422,12 @@ class VideoRecorderService :
 
     companion object {
         const val CAMERA_CLOSE_TIMEOUT = 20000L
+        val DELETE_RECORDING_ERROR_CODES = setOf(
+            VideoRecordEvent.Finalize.ERROR_UNKNOWN,
+            VideoRecordEvent.Finalize.ERROR_RECORDER_ERROR,
+            VideoRecordEvent.Finalize.ERROR_ENCODING_FAILED,
+            VideoRecordEvent.Finalize.ERROR_NO_VALID_DATA,
+        )
     }
 
     class CameraControl(

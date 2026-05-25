@@ -3,7 +3,6 @@ package app.myzel394.alibi.helpers
 import android.app.Activity
 import android.content.Context
 import androidx.biometric.BiometricManager
-import androidx.core.content.ContextCompat
 import androidx.biometric.BiometricPrompt
 import androidx.fragment.app.FragmentActivity
 import kotlinx.coroutines.CompletableDeferred
@@ -34,7 +33,6 @@ class AppLockHelper {
         ): CompletableDeferred<Boolean> {
             val deferred = CompletableDeferred<Boolean>()
 
-            val mainExecutor = ContextCompat.getMainExecutor(context)
             val biometricPrompt = BiometricPrompt(
                 context as FragmentActivity,
                 object : BiometricPrompt.AuthenticationCallback() {
