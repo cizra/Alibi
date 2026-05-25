@@ -13,6 +13,11 @@ android {
     if (keystorePropertiesFile.exists()) {
         keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
     }
+    def hasReleaseSigningConfig =
+            keystoreProperties['storeFile'] &&
+                    keystoreProperties['storePassword'] &&
+                    keystoreProperties['keyAlias'] &&
+                    keystoreProperties['keyPassword']
 
     lint {
         disable "ExtraTranslation"
@@ -45,17 +50,21 @@ android {
     }
 
     signingConfigs {
-        release {
-            keyAlias keystoreProperties['keyAlias']
-            keyPassword keystoreProperties['keyPassword']
-            storeFile keystoreProperties['storeFile'] ? file(keystoreProperties['storeFile']) : null
-            storePassword keystoreProperties['storePassword']
+        if (hasReleaseSigningConfig) {
+            release {
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+                storeFile file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+            }
         }
     }
 
     buildTypes {
         release {
-            signingConfig signingConfigs.release
+            if (hasReleaseSigningConfig) {
+                signingConfig signingConfigs.release
+            }
 
             debuggable false
             minifyEnabled true
